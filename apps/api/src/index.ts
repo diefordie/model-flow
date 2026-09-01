@@ -10,11 +10,16 @@ import projectExperimentsRouter from "./routes/projectExperiments.ts";
 import dashboardsRouter, { dashboardCreate } from "./routes/dashboards.ts";
 import predictionsRouter from "./routes/predictions.ts";
 import insightsRouter from "./routes/insights.ts";
+import authRouter from "./routes/auth.ts";
 
 const app = new Hono<AuthContext>().basePath("/api/v1");
 
 // Public.
 app.get("/health", (c) => c.json({ ok: true }));
+
+// Public auth endpoints (signup with auto-confirm). Must be mounted BEFORE
+// the auth gate below.
+app.route("/auth", authRouter);
 
 // Auth gate below.
 app.use("*", requireAuth);
