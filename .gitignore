@@ -14,3 +14,12 @@ venv/
 .ruff_cache/
 .vitest-cache/
 coverage/
+
+# Frontend verify screenshots — dev-only, never committed
+.verify/
+
+# Cross-agent scratch dropped into project root by sibling agents
+.hermes/
+.agents/
+.claude/
+skills-lock.json

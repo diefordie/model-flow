@@ -21,6 +21,7 @@ import type {
   ColumnMeta,
   ExperimentSummary,
   ExperimentStatusResponse,
+  ExperimentResults,
   ApiError,
   TaskType,
   PipelineConfig
@@ -28,6 +29,11 @@ import type {
 
 import { DATASETS, PROFILES, ROWS, TOTAL_ROWS } from '~/data/mockDatasets'
 import { MODEL_REGISTRY, type ModelEntry } from '~/data/mockModels'
+import {
+  SEEDED_EXPERIMENTS,
+  generateClassificationResults,
+  generateRegressionResults
+} from '~/data/mockExperiments'
 
 const USE_MOCK = true
 
@@ -162,7 +168,12 @@ export function useApi() {
     listModels:      (task: TaskType) => request<{ models: ModelEntry[] }>(`/models?task=${task}`),
     getDatasetColumns: (datasetId: string) => request<{ columns: ColumnMeta[] }>(`/datasets/${datasetId}/columns`),
     createExperiment: (projectId: string, body: PipelineConfig & { datasetId: string }) =>
-      request<{ experimentId: string; status: 'queued' }>(`/projects/${projectId}/experiments`, { method: 'POST', body })
+      request<{ experimentId: string; status: 'queued' }>(`/projects/${projectId}/experiments`, { method: 'POST', body }),
+
+    getExperiment: (expId: string) =>
+      request<ExperimentSummary>(`/experiments/${expId}`),
+    getExperimentResults: (expId: string) =>
+      request<ExperimentResults>(`/experiments/${expId}/results`)
   }
 }
 
@@ -217,6 +228,38 @@ async function mockFetch<T>(path: string, opts: { method?: string; body?: unknow
   const expListMatch = path.match(/^\/projects\/([^/]+)\/experiments$/)
   if (expListMatch) {
     return (s.experiments[expListMatch[1]] ?? []) as unknown as T
+  }
+
+  // GET /experiments/:id (single experiment summary)
+  const expMetaMatch = path.match(/^\/experiments\/([^/]+)$/)
+  if (expMetaMatch) {
+    for (const list of Object.values(s.experiments)) {
+      const e = list.find(x => x.id === expMetaMatch[1])
+      if (e) return e as unknown as T
+    }
+    throw err('NOT_FOUND', 'Experiment not found')
+  }
+
+  // GET /experiments/:id/results (mocked visualizations + metrics)
+  const expResultsMatch = path.match(/^\/experiments\/([^/]+)\/results$/)
+  if (expResultsMatch) {
+    let exp: ExperimentSummary | undefined
+    for (const list of Object.values(s.experiments)) {
+      exp = list.find(x => x.id === expResultsMatch[1])
+      if (exp) break
+    }
+    if (!exp) throw err('NOT_FOUND', 'Experiment not found')
+    if (exp.status !== 'completed') {
+      throw err('NOT_READY', 'Experiment is not yet completed')
+    }
+    // synthesize features from dataset profile if exp has no features attached
+    const features = exp.taskType === 'classification'
+      ? ['Glucose', 'BMI', 'Age', 'Pregnancies', 'BloodPressure', 'SkinHeight', 'Insulin', 'DiabetesPedigreeFunction']
+      : ['OverallQual', 'GrLivArea', 'GarageCars', 'TotalBsmtSF', 'YearBuilt']
+    return (exp.taskType === 'classification'
+      ? generateClassificationResults(exp.id, features)
+      : generateRegressionResults(exp.id, features)
+    ) as unknown as T
   }
 
   // GET /experiments/:id/status

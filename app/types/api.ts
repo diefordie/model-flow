@@ -116,6 +116,63 @@ export interface ExperimentStatusResponse {
   errorMessage?: string
 }
 
+// ── Experiment results (Sprint 4) ────────────────────────────────────
+
+export type ClassificationMetrics = {
+  accuracy: number
+  precision: number
+  recall: number
+  f1: number
+  rocAuc?: number
+}
+
+export type RegressionMetrics = {
+  mae: number
+  mse: number
+  rmse: number
+  r2: number
+}
+
+export type ClusteringMetrics = {
+  silhouette: number
+  inertia: number
+  clusterSizes: number[]
+}
+
+/** Confusion matrix (rows = true class, cols = predicted class). */
+export interface ConfusionMatrixData {
+  classes: string[]
+  matrix: number[][]
+}
+
+export interface RocCurveData {
+  fpr: number[][]
+  tpr: number[][]
+  auc: number
+}
+
+export interface ResidualsData {
+  predicted: number[]
+  residuals: number[]
+}
+
+export interface ExperimentResults {
+  metrics: ClassificationMetrics | RegressionMetrics | ClusteringMetrics
+  visualizations: {
+    confusionMatrix?: ConfusionMatrixData
+    rocCurve?: RocCurveData
+    residuals?: ResidualsData
+    featureImportance?: Array<{ name: string; importance: number }>
+    clusterSizes?: number[]
+  }
+  model: {
+    id: string
+    framework: string
+    serialized: { sizeBytes: number; checksum: string }
+    downloadUrl: string
+  }
+}
+
 // ── Errors ─────────────────────────────────────────────────────────────
 
 export interface ApiError {

@@ -77,7 +77,7 @@ async function submit() {
       ...pipeline.config,
       datasetId: pipeline.datasetId
     })
-    await router.push(`/projects/${projectId.value}/experiments?created=${experimentId}`)
+    await router.push(`/projects/${projectId.value}/experiments/${experimentId}`)
   } catch (e: any) {
     submitError.value = e?.message ?? 'Failed to create experiment'
   } finally {
