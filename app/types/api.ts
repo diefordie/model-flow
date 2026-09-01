@@ -59,6 +59,37 @@ export interface DatasetPreviewResponse {
   totalRows: number
 }
 
+// ── Pipeline ───────────────────────────────────────────────────────────
+
+export type MissingValueStrategy = 'drop' | 'mean' | 'median' | 'most_frequent' | 'constant'
+export type ScalingStrategy = 'none' | 'standard' | 'minmax' | 'robust'
+export type EncodingStrategy = 'onehot' | 'ordinal'
+export type OptimizationMethod = 'manual' | 'grid' | 'random'
+
+export interface PreprocessingConfig {
+  missingValues: MissingValueStrategy
+  scaling: ScalingStrategy
+  encoding: EncodingStrategy
+  testSize: number       // 0.0–1.0, default 0.2
+  randomState: number
+}
+
+export interface TrainingConfig {
+  optimization: OptimizationMethod
+  cvFolds: number        // used for grid/random
+  scoring: string        // metric id, see data/mockModels.ts §metricsForTask
+}
+
+export interface PipelineConfig {
+  taskType: TaskType
+  target: string | null    // null for clustering
+  features: string[]
+  preprocessing: PreprocessingConfig
+  modelId: string
+  hyperparameters: Record<string, number | string | boolean>
+  training: TrainingConfig
+}
+
 // ── Experiments ────────────────────────────────────────────────────────
 
 export type TaskType = 'classification' | 'regression' | 'clustering'

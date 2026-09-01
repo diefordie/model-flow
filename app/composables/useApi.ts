@@ -21,10 +21,13 @@ import type {
   ColumnMeta,
   ExperimentSummary,
   ExperimentStatusResponse,
-  ApiError
+  ApiError,
+  TaskType,
+  PipelineConfig
 } from '~/types/api'
 
 import { DATASETS, PROFILES, ROWS, TOTAL_ROWS } from '~/data/mockDatasets'
+import { MODEL_REGISTRY, type ModelEntry } from '~/data/mockModels'
 
 const USE_MOCK = true
 
@@ -154,7 +157,12 @@ export function useApi() {
     getDataset:      (datasetId: string) => request<Dataset>(`/datasets/${datasetId}`),
     previewDataset:  (datasetId: string, page = 1, limit = 20) =>
       request<DatasetPreviewResponse>(`/datasets/${datasetId}/preview?page=${page}&limit=${limit}`),
-    getDatasetProfile: (datasetId: string) => request<{ columns: ColumnMeta[] }>(`/datasets/${datasetId}/profile`)
+    getDatasetProfile: (datasetId: string) => request<{ columns: ColumnMeta[] }>(`/datasets/${datasetId}/profile`),
+
+    listModels:      (task: TaskType) => request<{ models: ModelEntry[] }>(`/models?task=${task}`),
+    getDatasetColumns: (datasetId: string) => request<{ columns: ColumnMeta[] }>(`/datasets/${datasetId}/columns`),
+    createExperiment: (projectId: string, body: PipelineConfig & { datasetId: string }) =>
+      request<{ experimentId: string; status: 'queued' }>(`/projects/${projectId}/experiments`, { method: 'POST', body })
   }
 }
 
@@ -270,6 +278,58 @@ async function mockFetch<T>(path: string, opts: { method?: string; body?: unknow
     const cols = PROFILES[dsProfileMatch[1]]
     if (!cols) throw err('NOT_FOUND', 'Dataset not found')
     return { columns: cols } as unknown as T
+  }
+
+  // GET /datasets/:datasetId/columns (alias — same shape as profile for now)
+  const dsColMatch = path.match(/^\/datasets\/([^/]+)\/columns$/)
+  if (dsColMatch) {
+    const cols = PROFILES[dsColMatch[1]]
+    if (!cols) throw err('NOT_FOUND', 'Dataset not found')
+    return { columns: cols } as unknown as T
+  }
+
+  // GET /models?task=...
+  const modelsMatch = path.match(/^\/models(?:\?.*)?$/)
+  if (modelsMatch) {
+    const url = new URL(path, 'http://x')
+    const task = url.searchParams.get('task') as TaskType | null
+    if (task && (task === 'classification' || task === 'regression' || task === 'clustering')) {
+      return { models: MODEL_REGISTRY[task] } as unknown as T
+    }
+    return { models: [] } as unknown as T
+  }
+
+  // POST /projects/:projectId/experiments
+  const createExpMatch = path.match(/^\/projects\/([^/]+)\/experiments$/)
+  if (createExpMatch && opts.method === 'POST') {
+    const body = opts.body as PipelineConfig & { datasetId: string }
+    // backend validation (PRD §4.4 — minimal mock)
+    if (!body.datasetId) throw err('VALIDATION_ERROR', 'datasetId is required')
+    if (!body.taskType) throw err('VALIDATION_ERROR', 'taskType is required')
+    if (body.taskType !== 'clustering' && !body.target) {
+      throw err('VALIDATION_ERROR', 'target is required for supervised tasks')
+    }
+    if (!body.features?.length) throw err('VALIDATION_ERROR', 'at least one feature is required')
+    if (!body.modelId) throw err('VALIDATION_ERROR', 'modelId is required')
+    if (body.target && body.features.includes(body.target)) {
+      throw err('INVALID_CONFIGURATION', 'target cannot also be a feature')
+    }
+    const s = loadState()
+    const id = uid('exp')
+    const exp: ExperimentSummary = {
+      id,
+      projectId: createExpMatch[1],
+      name: body.modelId.replace(/_/g, ' '),
+      taskType: body.taskType,
+      modelId: body.modelId,
+      status: 'queued',
+      createdAt: new Date().toISOString(),
+      durationMs: 0
+    }
+    s.experiments[createExpMatch[1]] = s.experiments[createExpMatch[1]] ?? []
+    s.experiments[createExpMatch[1]].unshift(exp)
+    persist()
+    return { experimentId: id, status: 'queued' } as unknown as T
   }
 
   throw err('NOT_FOUND', `Mock route not implemented: ${path}`)

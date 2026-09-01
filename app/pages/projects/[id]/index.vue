@@ -96,7 +96,7 @@ function badgeFor(status: string) {
           ]"
         >
           {{ item.label }}
-          <span v-if="item.to && item.to !== 'dataset'" class="text-[10px] text-ink-400 ml-1">soon</span>
+          <span v-if="item.to && item.to !== 'dataset' && item.to !== 'pipeline'" class="text-[10px] text-ink-400 ml-1">soon</span>
         </NuxtLink>
       </nav>
     </header>

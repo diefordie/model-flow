@@ -1,36 +1,16 @@
-# Nuxt
-.nuxt
-.output
-.nitro
-.cache
-dist
-
-# Node
-node_modules
-.npm
-*.log
-
-# Env
+node_modules/
+.nuxt/
+.output/
+dist/
+__pycache__/
+*.pyc
+.venv/
+venv/
 .env
-.env.*
-!.env.example
-
-# OS
+.env.local
+*.log
 .DS_Store
-Thumbs.db
-
-# Editor
-.vscode/*
-!.vscode/extensions.json
-.idea
-
-# Hermes internal plans / scratch (written by other agents during multi-agent sessions)
-.hermes/
-
-# Cross-agent skills dropped into project root by sibling agents (Juru/Lunas)
-.agents/
-.claude/
-skills-lock.json
-
-# Verify screenshots (dev-only, not committed)
-.verify/
+.pytest_cache/
+.ruff_cache/
+.vitest-cache/
+coverage/
