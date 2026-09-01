@@ -24,5 +24,8 @@ Thumbs.db
 !.vscode/extensions.json
 .idea
 
+# Hermes internal plans / scratch (written by other agents during multi-agent sessions)
+.hermes/
+
 # Verify screenshots (dev-only, not committed)
 .verify/
