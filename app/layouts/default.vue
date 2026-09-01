@@ -32,7 +32,14 @@ const userInitials = computed(() => {
   return name.slice(0, 2).toUpperCase()
 })
 
-onClickOutside(userMenu, () => { userMenuOpen.value = false })
+function handleUserMenuClickOutside(e: MouseEvent) {
+  if (!userMenu.value) return
+  if (!(userMenu.value as HTMLElement).contains(e.target as Node)) userMenuOpen.value = false
+}
+if (import.meta.client) {
+  onMounted(() => document.addEventListener('click', handleUserMenuClickOutside))
+  onBeforeUnmount(() => document.removeEventListener('click', handleUserMenuClickOutside))
+}
 const mobileNavOpen = ref(false)
 
 onMounted(() => {

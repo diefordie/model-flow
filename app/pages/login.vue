@@ -24,6 +24,33 @@ async function submit() {
     : await auth.signUp(email.value, password.value)
   if (ok) await router.push((route.query.redirect as string) || '/dashboard')
 }
+
+onMounted(() => {
+  // Test-mode seeding: ?seed_jwt= + &seed_email= writes to localStorage then
+  // redirects. Lets headless tests log in without a real signup flow.
+  const seedJwt = route.query.seed_jwt as string | undefined
+  const seedEmail = route.query.seed_email as string | undefined
+  if (seedJwt && seedEmail) {
+    try {
+      const payload = JSON.parse(atob(seedJwt.split('.')[1]))
+      auth.setSession({
+        access_token: seedJwt,
+        refresh_token: '',
+        user: {
+          id: payload.sub,
+          email: seedEmail,
+          role: 'authenticated',
+          app_metadata: { provider: 'email' },
+          user_metadata: {}
+        }
+      })
+      const redirect = (route.query.redirect as string) || '/dashboard'
+      router.replace(redirect)
+    } catch (e) {
+      console.error('[login.onMounted] seed failed:', e)
+    }
+  }
+})
 </script>
 
 <template>

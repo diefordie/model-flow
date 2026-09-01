@@ -112,7 +112,20 @@ export const useAuth = () => {
     }
   }
 
-  function signOut() {
+  /** Externally set a session (e.g. test-mode seed_jwt query param).
+   *  Stores in localStorage and updates reactive state. */
+  function setSession(s: { access_token: string; refresh_token: string; user: AuthUser }) {
+    const next: AuthSession = {
+      access_token: s.access_token,
+      refresh_token: s.refresh_token,
+      expires_at: Math.floor(Date.now() / 1000) + 3600, // 1h default
+      user: { id: s.user.id, email: s.user.email }
+    }
+    session.value = next
+    persist(next) // persist takes a plain object, not the ref
+  }
+
+  async function signOut() {
     session.value = null
     persist(null)
     navigateTo('/login')
@@ -128,6 +141,6 @@ export const useAuth = () => {
     isAuthenticated,
     isLoading: readonly(isLoading),
     error: readonly(error),
-    signIn, signUp, signOut, getToken
+    signIn, signUp, signOut, setSession, getToken
   }
 }

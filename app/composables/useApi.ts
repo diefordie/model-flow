@@ -45,8 +45,10 @@ import {
 import { resolveInsight, listInsights, SEEDED_DASHBOARDS } from '~/data/mockInsights'
 import {
   adaptProject, adaptExperimentListItem, adaptStatus, adaptModelsResponse, adaptResults,
+  adaptDataset, adaptExperimentFull, adaptInsightsResponse,
   type RealProject, type RealExperimentListItem, type RealStatus,
-  type RealModelsResponse, type RealResults
+  type RealModelsResponse, type RealResults,
+  type RealDataset, type RealExperimentFull, type RealInsightsResponse
 } from './apiAdapter'
 
 const USE_MOCK = true
@@ -198,8 +200,16 @@ const REAL_ENDPOINTS = new Set<string>([
   'POST /projects',
   'GET /projects/:id/experiments',
   'POST /projects/:id/experiments',
+  'GET /experiments/:id',
   'GET /experiments/:id/status',
   'GET /experiments/:id/results',
+  'GET /projects/:id/datasets',
+  'GET /projects/:id/dashboards',
+  'GET /dashboards/:id',
+  'POST /projects/:id/dashboards',
+  'PATCH /dashboards/:id',
+  'DELETE /dashboards/:id',
+  'GET /projects/:id/insights',
   'GET /models'
 ])
 
@@ -281,6 +291,21 @@ export function useApi() {
   async function listModelsReal(task: TaskType): Promise<{ models: ModelEntry[] }> {
     return adaptModelsResponse(await realFetch<RealModelsResponse>(`/models?task=${task}`)) as unknown as { models: ModelEntry[] }
   }
+  async function getExperimentReal(id: string): Promise<ExperimentSummary> {
+    return adaptExperimentFull(await realFetch<RealExperimentFull>(`/experiments/${id}`)) as unknown as ExperimentSummary
+  }
+  async function listDatasetsReal(projectId: string): Promise<Dataset[]> {
+    const list = await realFetch<RealDataset[]>(`/projects/${projectId}/datasets`)
+    return list.map(adaptDataset) as unknown as Dataset[]
+  }
+  async function listDashboardsReal(projectId: string): Promise<Dashboard[]> {
+    // backend returns raw Dashboard[]; same camelCase as frontend type — passthrough
+    return await realFetch<Dashboard[]>(`/projects/${projectId}/dashboards`)
+  }
+  async function listInsightsReal(projectId: string, taskType?: TaskType): Promise<{ insights: InsightDescriptor[] }> {
+    const q = taskType ? `?task=${taskType}` : ''
+    return adaptInsightsResponse(await realFetch<RealInsightsResponse>(`/projects/${projectId}/insights${q}`))
+  }
 
   return {
     listProjects:   useReal ? listProjectsReal : () => request<Project[]>('/projects'),
@@ -302,7 +327,7 @@ export function useApi() {
         training: body.training
       } }),
 
-    listDatasets:    (projectId: string) => request<Dataset[]>(`/projects/${projectId}/datasets`),
+    listDatasets:    useReal ? listDatasetsReal : (projectId: string) => request<Dataset[]>(`/projects/${projectId}/datasets`),
     getDataset:      (datasetId: string) => request<Dataset>(`/datasets/${datasetId}`),
     previewDataset:  (datasetId: string, page = 1, limit = 20) =>
       request<DatasetPreviewResponse>(`/datasets/${datasetId}/preview?page=${page}&limit=${limit}`),
@@ -311,12 +336,12 @@ export function useApi() {
     listModels:      useReal ? listModelsReal : (task: TaskType) => request<{ models: ModelEntry[] }>(`/models?task=${task}`),
     getDatasetColumns: (datasetId: string) => request<{ columns: ColumnMeta[] }>(`/datasets/${datasetId}/columns`),
 
-    getExperiment: (expId: string) =>
+    getExperiment: useReal ? getExperimentReal : (expId: string) =>
       request<ExperimentSummary>(`/experiments/${expId}`),
     getExperimentResults: useReal ? getExperimentResultsReal : (expId: string) =>
       request<ExperimentResults>(`/experiments/${expId}/results`),
 
-    listDashboards: (projectId: string) =>
+    listDashboards: useReal ? listDashboardsReal : (projectId: string) =>
       request<Dashboard[]>(`/projects/${projectId}/dashboards`),
     getDashboard: (dashId: string) =>
       request<Dashboard>(`/dashboards/${dashId}`),
@@ -326,7 +351,7 @@ export function useApi() {
       request<Dashboard>(`/dashboards/${dashId}`, { method: 'PATCH', body }),
     deleteDashboard: (dashId: string) =>
       request<void>(`/dashboards/${dashId}`, { method: 'DELETE' }),
-    listInsights: (projectId: string, taskType?: TaskType) =>
+    listInsights: useReal ? listInsightsReal : (projectId: string, taskType?: TaskType) =>
       request<{ insights: InsightDescriptor[] }>(`/projects/${projectId}/insights${taskType ? `?task=${taskType}` : ''}`),
 
     mode: useReal ? 'real' as const : 'mock' as const
