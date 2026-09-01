@@ -146,6 +146,14 @@ export interface DashboardLayout {
   widgets: { key: string; x: number; y: number; w: number; h: number }[];
 }
 
+/** InsightDescriptor — PRD §6.1 §5: catalog exposed by the backend. */
+export interface InsightDescriptor {
+  key: string;
+  label: string;
+  category: "dataset" | "eda" | "ml" | "model_metrics";
+  available: boolean;
+}
+
 // --- Predictions ---
 export interface PredictInput {
   features: Record<string, number | string>;

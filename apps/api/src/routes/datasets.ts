@@ -26,6 +26,20 @@ const ALLOWED_MIMES = new Set([
 // --- Upload under the project (nested route) ---
 const upload = new Hono<AuthContext>();
 
+// List datasets belonging to a project (PRD §4.2).
+upload.get("/", async (c) => {
+  const sb = requestClient(c);
+  const projectId = Number(c.req.param("projectId"));
+  if (!Number.isInteger(projectId)) return errorResponse(c, "VALIDATION_ERROR", "Bad project id");
+  const { data, error } = await sb
+    .from("datasets")
+    .select("*")
+    .eq("project_id", projectId)
+    .order("created_at", { ascending: false });
+  if (error) return errorResponse(c, "INTERNAL_ERROR", error.message);
+  return c.json(data ?? []);
+});
+
 upload.post("/", async (c) => {
   const projectId = Number(c.req.param("projectId"));
   if (!Number.isInteger(projectId)) return errorResponse(c, "VALIDATION_ERROR", "Bad project id");

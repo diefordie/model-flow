@@ -157,6 +157,20 @@ router.post("/", validateBody(createSchema), async (c) => {
   return c.json({ experimentId: exp.id, status: "queued" }, 201);
 });
 
+router.get("/:experimentId", async (c) => {
+  const sb = requestClient(c);
+  const id = Number(c.req.param("experimentId"));
+  if (!Number.isInteger(id)) return errorResponse(c, "VALIDATION_ERROR", "Bad id");
+  const { data, error } = await sb
+    .from("experiments")
+    .select("id,project_id,name,task_type,target_column,feature_columns,status,current_stage,progress,created_at,completed_at")
+    .eq("id", id)
+    .maybeSingle();
+  if (error) return errorResponse(c, "INTERNAL_ERROR", error.message);
+  if (!data) return errorResponse(c, "NOT_FOUND");
+  return c.json(data);
+});
+
 router.get("/:experimentId/status", async (c) => {
   const sb = requestClient(c);
   const id = Number(c.req.param("experimentId"));

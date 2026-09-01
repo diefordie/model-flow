@@ -9,6 +9,7 @@ import experimentsRouter from "./routes/experiments.ts";
 import projectExperimentsRouter from "./routes/projectExperiments.ts";
 import dashboardsRouter, { dashboardCreate } from "./routes/dashboards.ts";
 import predictionsRouter from "./routes/predictions.ts";
+import insightsRouter from "./routes/insights.ts";
 
 const app = new Hono<AuthContext>().basePath("/api/v1");
 
@@ -35,6 +36,9 @@ app.route("/projects/:projectId/experiments", projectExperimentsRouter);
 // --- Dashboards ---
 app.route("/dashboards", dashboardsRouter);
 app.route("/projects/:projectId/dashboards", dashboardCreate);
+
+// --- Insights catalog ---
+app.route("/projects/:projectId/insights", insightsRouter);
 
 // --- Predictions ---
 app.route("/experiments", predictionsRouter);

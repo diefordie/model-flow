@@ -40,6 +40,20 @@ function defaultLayout(insights: string[]): DashboardLayout {
   };
 }
 
+// List dashboards belonging to a project (PRD §4.5).
+projectScoped.get("/", async (c) => {
+  const sb = requestClient(c);
+  const projectId = Number(c.req.param("projectId"));
+  if (!Number.isInteger(projectId)) return errorResponse(c, "VALIDATION_ERROR", "Bad id");
+  const { data, error } = await sb
+    .from("dashboards")
+    .select("id,project_id,experiment_id,name,layout,insights,created_at,updated_at")
+    .eq("project_id", projectId)
+    .order("updated_at", { ascending: false });
+  if (error) return errorResponse(c, "INTERNAL_ERROR", error.message);
+  return c.json(data ?? []);
+});
+
 projectScoped.post("/", validateBody(createSchema), async (c) => {
   const sb = requestClient(c);
   const user = c.get("user");
@@ -95,6 +109,17 @@ router.get("/:dashboardId", async (c) => {
   if (error) return errorResponse(c, "INTERNAL_ERROR", error.message);
   if (!data) return errorResponse(c, "NOT_FOUND");
   return c.json(data);
+});
+
+// Delete a dashboard (PRD §4.5).
+router.delete("/:dashboardId", async (c) => {
+  const sb = requestClient(c);
+  const id = Number(c.req.param("dashboardId"));
+  if (!Number.isInteger(id)) return errorResponse(c, "VALIDATION_ERROR", "Bad id");
+  const { data, error } = await sb.from("dashboards").delete().eq("id", id).select("id").maybeSingle();
+  if (error) return errorResponse(c, "INTERNAL_ERROR", error.message);
+  if (!data) return errorResponse(c, "NOT_FOUND");
+  return c.json({ success: true });
 });
 
 router.patch("/:dashboardId", validateBody(updateSchema), async (c) => {
