@@ -16,11 +16,15 @@
 import type {
   Project,
   CreateProjectInput,
+  Dataset,
   DatasetPreviewResponse,
+  ColumnMeta,
   ExperimentSummary,
   ExperimentStatusResponse,
   ApiError
 } from '~/types/api'
+
+import { DATASETS, PROFILES, ROWS, TOTAL_ROWS } from '~/data/mockDatasets'
 
 const USE_MOCK = true
 
@@ -146,8 +150,11 @@ export function useApi() {
     listExperiments:(projectId: string) => request<ExperimentSummary[]>(`/projects/${projectId}/experiments`),
     getExperimentStatus: (id: string) => request<ExperimentStatusResponse>(`/experiments/${id}/status`),
 
+    listDatasets:    (projectId: string) => request<Dataset[]>(`/projects/${projectId}/datasets`),
+    getDataset:      (datasetId: string) => request<Dataset>(`/datasets/${datasetId}`),
     previewDataset:  (datasetId: string, page = 1, limit = 20) =>
-      request<DatasetPreviewResponse>(`/datasets/${datasetId}/preview?page=${page}&limit=${limit}`)
+      request<DatasetPreviewResponse>(`/datasets/${datasetId}/preview?page=${page}&limit=${limit}`),
+    getDatasetProfile: (datasetId: string) => request<{ columns: ColumnMeta[] }>(`/datasets/${datasetId}/profile`)
   }
 }
 
@@ -219,6 +226,50 @@ async function mockFetch<T>(path: string, opts: { method?: string; body?: unknow
       }
     }
     throw err('NOT_FOUND', 'Experiment not found')
+  }
+
+  // ── Dataset routes ───────────────────────────────────────────────────
+
+  // GET /projects/:projectId/datasets
+  const dsListMatch = path.match(/^\/projects\/([^/]+)\/datasets$/)
+  if (dsListMatch) {
+    return DATASETS.filter(d => d.projectId === dsListMatch[1]) as unknown as T
+  }
+
+  // GET /datasets/:datasetId  (metadata only)
+  const dsMetaMatch = path.match(/^\/datasets\/([^/]+)$/)
+  if (dsMetaMatch) {
+    const ds = DATASETS.find(d => d.id === dsMetaMatch[1])
+    if (!ds) throw err('NOT_FOUND', 'Dataset not found')
+    return ds as unknown as T
+  }
+
+  // GET /datasets/:datasetId/preview?page=&limit=
+  const dsPreviewMatch = path.match(/^\/datasets\/([^/]+)\/preview(?:\?.*)?$/)
+  if (dsPreviewMatch) {
+    const id = dsPreviewMatch[1]
+    const url = new URL(path, 'http://x')
+    const page = parseInt(url.searchParams.get('page') ?? '1', 10)
+    const limit = parseInt(url.searchParams.get('limit') ?? '20', 10)
+    if (!PROFILES[id]) throw err('NOT_FOUND', 'Dataset not found')
+    const allRows = ROWS[id] ?? []
+    const total = TOTAL_ROWS[id] ?? allRows.length
+    const start = (page - 1) * limit
+    return {
+      columns: PROFILES[id],
+      rows: allRows.slice(start, start + limit),
+      page,
+      limit,
+      totalRows: total
+    } as unknown as T
+  }
+
+  // GET /datasets/:datasetId/profile
+  const dsProfileMatch = path.match(/^\/datasets\/([^/]+)\/profile$/)
+  if (dsProfileMatch) {
+    const cols = PROFILES[dsProfileMatch[1]]
+    if (!cols) throw err('NOT_FOUND', 'Dataset not found')
+    return { columns: cols } as unknown as T
   }
 
   throw err('NOT_FOUND', `Mock route not implemented: ${path}`)

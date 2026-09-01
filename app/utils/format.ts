@@ -1,7 +1,7 @@
 /**
- * Tiny date helpers — no dependency on dayjs/date-fns yet.
- * If we ever need locale-aware formatting beyond what Intl gives,
- * add dayjs then. (ponytail: stdlib Intl only.)
+ * Formatting helpers. Stdlib Intl + tiny number formatting.
+ * ponytail: no dayjs/date-fns. Add when we need locale plural rules or
+ *   relative-time thresholds beyond "moments ago / Xd ago".
  */
 
 export function formatDistanceToNow(iso: string): string {
@@ -23,4 +23,11 @@ export function formatDistanceToNow(iso: string): string {
 
 export function formatDate(iso: string): string {
   return new Date(iso).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })
+}
+
+export function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`
+  if (bytes < 1024 ** 2) return `${(bytes / 1024).toFixed(1)} KB`
+  if (bytes < 1024 ** 3) return `${(bytes / 1024 ** 2).toFixed(1)} MB`
+  return `${(bytes / 1024 ** 3).toFixed(2)} GB`
 }

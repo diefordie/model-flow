@@ -27,5 +27,10 @@ Thumbs.db
 # Hermes internal plans / scratch (written by other agents during multi-agent sessions)
 .hermes/
 
+# Cross-agent skills dropped into project root by sibling agents (Juru/Lunas)
+.agents/
+.claude/
+skills-lock.json
+
 # Verify screenshots (dev-only, not committed)
 .verify/
