@@ -95,19 +95,24 @@ function isActive(to: string) {
           {{ api.mode }}
         </span>
         <div v-if="auth.isAuthenticated.value" class="w-px h-5 bg-ink-800 mx-1 md:mx-2 hidden sm:block" />
-        <div v-if="auth.isAuthenticated.value" class="relative" ref="userMenu">
-          <button @click="userMenuOpen = !userMenuOpen" class="flex items-center gap-2 pl-1 pr-2 h-9 rounded-md hover:bg-ink-800 text-ink-300 hover:text-white transition-colors" aria-label="User menu">
-            <span class="w-7 h-7 rounded-full bg-accent grid place-items-center font-bold text-xs uppercase">{{ userInitials }}</span>
-            <span class="hidden md:inline text-sm">{{ auth.user.value?.email ?? 'User' }}</span>
-          </button>
-          <div v-if="userMenuOpen" class="absolute right-0 top-11 w-56 bg-white text-ink-900 rounded-md border border-ink-200 shadow-lift py-1 text-sm">
-            <div class="px-3 py-2 border-b border-ink-100">
-              <div class="text-xs text-ink-500">Signed in as</div>
-              <div class="font-medium truncate">{{ auth.user.value?.email }}</div>
+        <ClientOnly>
+          <div v-if="auth.isAuthenticated.value" class="relative" ref="userMenu">
+            <button @click="userMenuOpen = !userMenuOpen" class="flex items-center gap-2 pl-1 pr-2 h-9 rounded-md hover:bg-ink-800 text-ink-300 hover:text-white transition-colors" aria-label="User menu">
+              <span class="w-7 h-7 rounded-full bg-gradient-to-br from-brand to-brand-600 grid place-items-center text-xs font-semibold">
+                {{ (auth.session.value?.user?.email || '?').charAt(0).toUpperCase() }}
+              </span>
+              <span class="text-sm hidden md:inline">{{ auth.session.value?.user?.email }}</span>
+            </button>
+            <div v-if="userMenuOpen" class="absolute right-0 top-11 w-56 bg-white text-ink-900 rounded-md border border-ink-200 shadow-lift py-1 text-sm">
+              <div class="px-3 py-2 border-b border-ink-100 text-xs text-ink-500 truncate">{{ auth.session.value?.user?.email }}</div>
+              <button @click="auth.signOut" class="w-full text-left px-3 py-1.5 hover:bg-ink-100">Sign out</button>
             </div>
-            <button @click="auth.signOut()" class="w-full text-left px-3 py-2 hover:bg-ink-50 transition-colors text-red-600">Sign out</button>
           </div>
-        </div>
+          <template #fallback>
+            <!-- SSR fallback: empty span keeps the bar height stable -->
+            <span class="w-7 h-7 inline-block" />
+          </template>
+        </ClientOnly>
         <button class="w-9 h-9 rounded-md hover:bg-ink-800 grid place-items-center text-ink-300 hover:text-white hidden sm:grid" aria-label="Settings">
           <svg viewBox="0 0 20 20" fill="none" class="w-4 h-4"><path d="M10 12.5a2.5 2.5 0 100-5 2.5 2.5 0 000 5z" stroke="currentColor" stroke-width="1.5"/><path d="M16.4 12.4l1.3 1.1-1.7 3-1.6-.5a6.4 6.4 0 01-1.6.9l-.3 1.6h-3.4l-.3-1.6a6.4 6.4 0 01-1.6-.9l-1.6.5-1.7-3 1.3-1.1a6.4 6.4 0 010-1.8l-1.3-1.1 1.7-3 1.6.5a6.4 6.4 0 011.6-.9l.3-1.6h3.4l.3 1.6a6.4 6.4 0 011.6.9l1.6-.5 1.7 3-1.3 1.1a6.4 6.4 0 010 1.8z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg>
         </button>

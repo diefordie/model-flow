@@ -19,10 +19,22 @@ if (auth.isAuthenticated.value) {
 }
 
 async function submit() {
-  const ok = mode.value === 'signin'
-    ? await auth.signIn(email.value, password.value)
-    : await auth.signUp(email.value, password.value)
-  if (ok) await router.push((route.query.redirect as string) || '/dashboard')
+  if (mode.value === 'signin') {
+    const ok = await auth.signIn(email.value, password.value)
+    if (ok) await router.push((route.query.redirect as string) || '/dashboard')
+    return
+  }
+  // Sign-up
+  const result = await auth.signUp(email.value, password.value)
+  if (result.ok) {
+    await router.push((route.query.redirect as string) || '/dashboard')
+    return
+  }
+  // If the email is already registered, flip to "Sign in" tab and
+  // pre-fill the email so the user can retry with their password.
+  if (result.code === 'USER_EXISTS') {
+    mode.value = 'signin'
+  }
 }
 
 onMounted(() => {

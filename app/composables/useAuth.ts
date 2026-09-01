@@ -75,10 +75,44 @@ export const useAuth = () => {
     }
   }
 
-  async function signUp(email: string, password: string) {
+  async function signUp(email: string, password: string): Promise<{ ok: true } | { ok: false; code: string }> {
     isLoading.value = true
     error.value = null
     try {
+      const config = useRuntimeConfig()
+      const isReal = config.public.apiMode === 'real'
+
+      if (isReal) {
+        // Real mode: hit our backend's POST /auth/signup which admin-creates
+        // the user with email_confirm=true and returns a ready-to-use session.
+        // (Direct Supabase signup returns no access_token when email confirmation
+        // is enabled, so the user is stuck on "check your email" forever.)
+        const r = await fetch('/api/v1/auth/signup', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email, password })
+        })
+        const body = await r.json()
+        if (!r.ok) {
+          const code = body?.error?.code ?? 'SIGNUP_FAILED'
+          const msg = body?.error?.message ?? body?.message ?? 'Signup failed'
+          error.value = code === 'USER_EXISTS'
+            ? 'An account with this email already exists. Try signing in instead.'
+            : msg
+          return { ok: false, code }
+        }
+        const s: AuthSession = {
+          access_token: body.access_token,
+          refresh_token: body.refresh_token,
+          expires_at: body.expires_at ?? Math.floor(Date.now() / 1000) + body.expires_in,
+          user: { id: body.user.id, email: body.user.email }
+        }
+        session.value = s
+        persist(s)
+        return { ok: true }
+      }
+
+      // Mock mode: hit Supabase directly (kept for offline / dev).
       const r = await fetch(`${supabaseUrl}/auth/v1/signup`, {
         method: 'POST',
         headers: { 'apikey': supabaseKey, 'Content-Type': 'application/json' },
@@ -86,11 +120,10 @@ export const useAuth = () => {
       })
       const body = await r.json()
       if (!r.ok) {
+        const code = body?.error_code ?? 'SIGNUP_FAILED'
         error.value = body?.msg ?? body?.error_description ?? body?.message ?? 'Signup failed'
-        return false
+        return { ok: false, code }
       }
-      // Supabase may require email confirmation; if a session is returned
-      // (anon-friendly or confirmation disabled), log the user in directly.
       if (body.access_token) {
         const s: AuthSession = {
           access_token: body.access_token,
@@ -100,13 +133,13 @@ export const useAuth = () => {
         }
         session.value = s
         persist(s)
-        return true
+        return { ok: true }
       }
       error.value = 'Check your email to confirm your account, then log in.'
-      return false
+      return { ok: false, code: 'EMAIL_CONFIRM_REQUIRED' }
     } catch (e: any) {
       error.value = e?.message ?? 'Network error'
-      return false
+      return { ok: false, code: 'NETWORK_ERROR' }
     } finally {
       isLoading.value = false
     }

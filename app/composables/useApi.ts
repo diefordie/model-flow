@@ -32,7 +32,9 @@ import type {
   InsightDescriptor,
   ApiError,
   TaskType,
-  PipelineConfig
+  PipelineConfig,
+  PredictionInput,
+  PredictionResult
 } from '~/types/api'
 
 import { DATASETS, PROFILES, ROWS, TOTAL_ROWS } from '~/data/mockDatasets'
@@ -210,7 +212,8 @@ const REAL_ENDPOINTS = new Set<string>([
   'PATCH /dashboards/:id',
   'DELETE /dashboards/:id',
   'GET /projects/:id/insights',
-  'GET /models'
+  'GET /models',
+  'POST /experiments/:id/predict'
 ])
 
 function isRealEndpoint(method: string | undefined, path: string): boolean {
@@ -291,6 +294,9 @@ export function useApi() {
   async function listModelsReal(task: TaskType): Promise<{ models: ModelEntry[] }> {
     return adaptModelsResponse(await realFetch<RealModelsResponse>(`/models?task=${task}`)) as unknown as { models: ModelEntry[] }
   }
+  async function predictReal(experimentId: string, body: PredictionInput): Promise<PredictionResult> {
+    return await realFetch<PredictionResult>(`/experiments/${experimentId}/predict`, { method: 'POST', body })
+  }
   async function getExperimentReal(id: string): Promise<ExperimentSummary> {
     return adaptExperimentFull(await realFetch<RealExperimentFull>(`/experiments/${id}`)) as unknown as ExperimentSummary
   }
@@ -353,6 +359,10 @@ export function useApi() {
       request<void>(`/dashboards/${dashId}`, { method: 'DELETE' }),
     listInsights: useReal ? listInsightsReal : (projectId: string, taskType?: TaskType) =>
       request<{ insights: InsightDescriptor[] }>(`/projects/${projectId}/insights${taskType ? `?task=${taskType}` : ''}`),
+
+    predict: useReal
+      ? (experimentId: string, body: PredictionInput) => predictReal(experimentId, body)
+      : (experimentId: string, body: PredictionInput) => request<PredictionResult>(`/experiments/${experimentId}/predict`, { method: 'POST', body }),
 
     mode: useReal ? 'real' as const : 'mock' as const
   }

@@ -227,3 +227,16 @@ export interface ApiError {
   code: string
   message: string
 }
+
+// ── Predictions (Sprint 6) ─────────────────────────────────────────────
+
+/** Backend returns the worker's response directly. For classification:
+ *  { prediction, probability }; for regression: { prediction }. */
+export interface PredictionResult {
+  prediction: number | string
+  probability?: number
+}
+
+export interface PredictionInput {
+  features: Record<string, number | string>
+}
