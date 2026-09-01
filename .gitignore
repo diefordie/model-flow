@@ -1,0 +1,28 @@
+# Nuxt
+.nuxt
+.output
+.nitro
+.cache
+dist
+
+# Node
+node_modules
+.npm
+*.log
+
+# Env
+.env
+.env.*
+!.env.example
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/*
+!.vscode/extensions.json
+.idea
+
+# Verify screenshots (dev-only, not committed)
+.verify/
