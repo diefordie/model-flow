@@ -1,16 +1,21 @@
 /**
  * API client.
  *
- * Until the Hono backend + Supabase are wired (separate roles), this
- * composable serves a deterministic in-memory mock so the UI is
- * exercisable end-to-end. Switching to real backend is a one-line
- * change in `request()` — base URL flips to `/api/v1`.
+ * Dual mode:
+ *   1. `mock` (default) — pure in-memory fixtures, no auth required.
+ *      Works in any environment; UI is exercisable end-to-end.
+ *   2. `real` — proxied to the Hono backend at `/api/v1/*`. Requires
+ *      a valid Supabase JWT in `useAuth().getToken()`. Endpoints the
+ *      backend doesn't have yet (dashboards, insights, datasets) fall
+ *      back to mock automatically with a console warning.
  *
- * Mock latency is intentionally tiny (<200ms) so the loading states
- * still flash and can be visually verified.
+ * Mode is controlled by `NUXT_PUBLIC_API_MODE` (env) or
+ * `useRuntimeConfig().public.apiMode`. Default = `mock` so dev
+ * iteration never accidentally hits the backend.
  *
- * ponytail: in-memory mock. Swap when backend reports green by
- *   replacing `mockFetch` with a real `fetch` call to `/api/v1/...`.
+ * Response shapes from the backend use snake_case + a different
+ * envelope than the mock; `apiAdapter.ts` maps them to the camelCase
+ * the stores expect.
  */
 
 import type {
@@ -38,6 +43,11 @@ import {
   generateRegressionResults
 } from '~/data/mockExperiments'
 import { resolveInsight, listInsights, SEEDED_DASHBOARDS } from '~/data/mockInsights'
+import {
+  adaptProject, adaptExperimentListItem, adaptStatus, adaptModelsResponse, adaptResults,
+  type RealProject, type RealExperimentListItem, type RealStatus,
+  type RealModelsResponse, type RealResults
+} from './apiAdapter'
 
 const USE_MOCK = true
 
@@ -177,28 +187,120 @@ const err = (code: string, message: string): ApiError => ({ code, message })
 
 // ── Public API ─────────────────────────────────────────────────────────
 
+/**
+ * Endpoints the backend implements today. Only these go through the
+ * real path. Anything else falls back to mock so the UI doesn't break
+ * while the backend catches up to the PRD.
+ */
+const REAL_ENDPOINTS = new Set<string>([
+  'GET /projects',
+  'GET /projects/:id',
+  'POST /projects',
+  'GET /projects/:id/experiments',
+  'POST /projects/:id/experiments',
+  'GET /experiments/:id/status',
+  'GET /experiments/:id/results',
+  'GET /models'
+])
+
+function isRealEndpoint(method: string | undefined, path: string): boolean {
+  const m = method ?? 'GET'
+  const cleanPath = path.split('?')[0]!
+  for (const pattern of REAL_ENDPOINTS) {
+    const [pm, pp] = pattern.split(' ')
+    if (pm !== m) continue
+    if (pp === cleanPath) return true
+    if (pp!.includes(':')) {
+      const re = new RegExp('^' + pp!.replace(/:[^/]+/g, '[^/]+') + '$')
+      if (re.test(cleanPath)) return true
+    }
+  }
+  return false
+}
+
 export function useApi() {
-  async function request<T>(path: string, opts: { method?: string; body?: unknown } = {}): Promise<T> {
-    if (USE_MOCK) return mockFetch<T>(path, opts)
-    // real backend wiring — replace when Supabase + Hono are live
+  const config = useRuntimeConfig()
+  const mode = (config.public.apiMode as string) || 'mock'
+  const useReal = mode === 'real'
+
+  function getAuthHeaders(): Record<string, string> {
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+    if (import.meta.client) {
+      try {
+        const auth = useAuth()
+        const token = auth.getToken()
+        if (token) headers.Authorization = `Bearer ${token}`
+      } catch { /* useAuth may not be available in setup without provider */ }
+    }
+    return headers
+  }
+
+  async function realFetch<T>(path: string, opts: { method?: string; body?: unknown } = {}): Promise<T> {
     const res = await fetch(`/api/v1${path}`, {
       method: opts.method ?? 'GET',
-      headers: { 'Content-Type': 'application/json' },
+      headers: getAuthHeaders(),
       body: opts.body ? JSON.stringify(opts.body) : undefined
     })
-    const json = await res.json()
-    if (!json.success) throw json.error
-    return json.data as T
+    if (!res.ok) {
+      const text = await res.text()
+      throw err('HTTP_' + res.status, text || res.statusText)
+    }
+    if (res.status === 204) return undefined as unknown as T
+    return await res.json() as T
+  }
+
+  async function request<T>(path: string, opts: { method?: string; body?: unknown } = {}): Promise<T> {
+    const method = opts.method ?? 'GET'
+    if (useReal && isRealEndpoint(method, path)) {
+      return realFetch<T>(path, opts)
+    }
+    return mockFetch<T>(path, opts)
+  }
+
+  // Adapter-aware wrappers (call the real API + adapt response)
+  async function listProjectsReal(): Promise<Project[]> {
+    const list = await realFetch<RealProject[]>('/projects')
+    return list.map(adaptProject) as unknown as Project[]
+  }
+  async function getProjectReal(id: string): Promise<Project> {
+    return adaptProject(await realFetch<RealProject>(`/projects/${id}`)) as unknown as Project
+  }
+  async function createProjectReal(input: CreateProjectInput): Promise<Project> {
+    return adaptProject(await realFetch<RealProject>('/projects', { method: 'POST', body: input })) as unknown as Project
+  }
+  async function listExperimentsReal(projectId: string): Promise<ExperimentSummary[]> {
+    const list = await realFetch<RealExperimentListItem[]>(`/projects/${projectId}/experiments`)
+    return list.map(e => adaptExperimentListItem(e) as unknown as ExperimentSummary)
+  }
+  async function getExperimentStatusReal(id: string): Promise<ExperimentStatusResponse> {
+    return adaptStatus(await realFetch<RealStatus>(`/experiments/${id}/status`)) as unknown as ExperimentStatusResponse
+  }
+  async function getExperimentResultsReal(id: string): Promise<ExperimentResults> {
+    return adaptResults(await realFetch<RealResults>(`/experiments/${id}/results`)) as unknown as ExperimentResults
+  }
+  async function listModelsReal(task: TaskType): Promise<{ models: ModelEntry[] }> {
+    return adaptModelsResponse(await realFetch<RealModelsResponse>(`/models?task=${task}`)) as unknown as { models: ModelEntry[] }
   }
 
   return {
-    listProjects:   () => request<Project[]>('/projects'),
-    getProject:     (id: string) => request<Project>(`/projects/${id}`),
-    createProject:  (input: CreateProjectInput) => request<Project>('/projects', { method: 'POST', body: input }),
+    listProjects:   useReal ? listProjectsReal : () => request<Project[]>('/projects'),
+    getProject:     useReal ? getProjectReal : (id: string) => request<Project>(`/projects/${id}`),
+    createProject:  useReal ? createProjectReal : (input: CreateProjectInput) => request<Project>('/projects', { method: 'POST', body: input }),
     deleteProject:  (id: string) => request<void>(`/projects/${id}`, { method: 'DELETE' }),
 
-    listExperiments:(projectId: string) => request<ExperimentSummary[]>(`/projects/${projectId}/experiments`),
-    getExperimentStatus: (id: string) => request<ExperimentStatusResponse>(`/experiments/${id}/status`),
+    listExperiments: useReal ? listExperimentsReal : (projectId: string) => request<ExperimentSummary[]>(`/projects/${projectId}/experiments`),
+    getExperimentStatus: useReal ? getExperimentStatusReal : (id: string) => request<ExperimentStatusResponse>(`/experiments/${id}/status`),
+    createExperiment: (projectId: string, body: PipelineConfig & { datasetId: string }) =>
+      request<{ experimentId: string; status: 'queued' }>(`/projects/${projectId}/experiments`, { method: 'POST', body: {
+        datasetId: body.datasetId,
+        taskType: body.taskType,
+        target: body.target,
+        features: body.features,
+        preprocessing: body.preprocessing,
+        modelId: body.modelId,
+        hyperparameters: body.hyperparameters,
+        training: body.training
+      } }),
 
     listDatasets:    (projectId: string) => request<Dataset[]>(`/projects/${projectId}/datasets`),
     getDataset:      (datasetId: string) => request<Dataset>(`/datasets/${datasetId}`),
@@ -206,14 +308,12 @@ export function useApi() {
       request<DatasetPreviewResponse>(`/datasets/${datasetId}/preview?page=${page}&limit=${limit}`),
     getDatasetProfile: (datasetId: string) => request<{ columns: ColumnMeta[] }>(`/datasets/${datasetId}/profile`),
 
-    listModels:      (task: TaskType) => request<{ models: ModelEntry[] }>(`/models?task=${task}`),
+    listModels:      useReal ? listModelsReal : (task: TaskType) => request<{ models: ModelEntry[] }>(`/models?task=${task}`),
     getDatasetColumns: (datasetId: string) => request<{ columns: ColumnMeta[] }>(`/datasets/${datasetId}/columns`),
-    createExperiment: (projectId: string, body: PipelineConfig & { datasetId: string }) =>
-      request<{ experimentId: string; status: 'queued' }>(`/projects/${projectId}/experiments`, { method: 'POST', body }),
 
     getExperiment: (expId: string) =>
       request<ExperimentSummary>(`/experiments/${expId}`),
-    getExperimentResults: (expId: string) =>
+    getExperimentResults: useReal ? getExperimentResultsReal : (expId: string) =>
       request<ExperimentResults>(`/experiments/${expId}/results`),
 
     listDashboards: (projectId: string) =>
@@ -227,7 +327,9 @@ export function useApi() {
     deleteDashboard: (dashId: string) =>
       request<void>(`/dashboards/${dashId}`, { method: 'DELETE' }),
     listInsights: (projectId: string, taskType?: TaskType) =>
-      request<{ insights: InsightDescriptor[] }>(`/projects/${projectId}/insights${taskType ? `?task=${taskType}` : ''}`)
+      request<{ insights: InsightDescriptor[] }>(`/projects/${projectId}/insights${taskType ? `?task=${taskType}` : ''}`),
+
+    mode: useReal ? 'real' as const : 'mock' as const
   }
 }
 
