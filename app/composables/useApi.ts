@@ -22,6 +22,9 @@ import type {
   ExperimentSummary,
   ExperimentStatusResponse,
   ExperimentResults,
+  Dashboard,
+  DashboardWidget,
+  InsightDescriptor,
   ApiError,
   TaskType,
   PipelineConfig
@@ -34,6 +37,7 @@ import {
   generateClassificationResults,
   generateRegressionResults
 } from '~/data/mockExperiments'
+import { resolveInsight, listInsights, SEEDED_DASHBOARDS } from '~/data/mockInsights'
 
 const USE_MOCK = true
 
@@ -43,6 +47,38 @@ const USE_MOCK = true
 interface MockState {
   projects: Project[]
   experiments: Record<string /* projectId */, ExperimentSummary[]>
+  dashboards: Record<string /* projectId */, Dashboard[]>
+}
+
+function buildSeededDashboard(seed: typeof SEEDED_DASHBOARDS[number]): Dashboard {
+  const now = new Date().toISOString()
+  return {
+    id: seed.id,
+    projectId: seed.projectId,
+    name: seed.name,
+    description: seed.description,
+    widgets: seed.widgets.map((w, i) => ({
+      id: `${seed.id}_w${i}`,
+      type: (w.insight === 'primary_metric' ? 'metric_card'
+        : w.insight === 'metric_list' ? 'stat_table'
+        : w.insight === 'confusion_matrix' ? 'confusion_matrix'
+        : w.insight === 'roc_curve' ? 'roc_curve'
+        : w.insight === 'residuals' ? 'scatter_chart'
+        : w.insight === 'missing_values' ? 'bar_chart'
+        : w.insight === 'feature_importance' ? 'bar_chart'
+        : w.insight === 'correlation' ? 'heatmap'
+        : w.insight === 'distribution' ? 'distribution'
+        : w.insight === 'dataset_overview' ? 'stat_table'
+        : 'bar_chart') as DashboardWidget['type'],
+      title: w.insight.replace(/_/g, ' '),
+      insight: w.insight,
+      experimentId: w.experimentId,
+      position: { x: w.x, y: w.y, width: w.width, height: w.height },
+      data: undefined  // resolved on GET /dashboards/:id
+    })),
+    createdAt: now,
+    updatedAt: now
+  }
 }
 
 function seedState(): MockState {
@@ -99,7 +135,12 @@ function seedState(): MockState {
           durationMs: 0
         }
       ]
-    }
+    },
+    dashboards: SEEDED_DASHBOARDS.reduce<Record<string, Dashboard[]>>((acc, seed) => {
+      acc[seed.projectId] = acc[seed.projectId] ?? []
+      acc[seed.projectId].push(buildSeededDashboard(seed))
+      return acc
+    }, {})
   }
 }
 
@@ -173,7 +214,20 @@ export function useApi() {
     getExperiment: (expId: string) =>
       request<ExperimentSummary>(`/experiments/${expId}`),
     getExperimentResults: (expId: string) =>
-      request<ExperimentResults>(`/experiments/${expId}/results`)
+      request<ExperimentResults>(`/experiments/${expId}/results`),
+
+    listDashboards: (projectId: string) =>
+      request<Dashboard[]>(`/projects/${projectId}/dashboards`),
+    getDashboard: (dashId: string) =>
+      request<Dashboard>(`/dashboards/${dashId}`),
+    createDashboard: (projectId: string, body: { name: string; description?: string; widgets?: DashboardWidget[] }) =>
+      request<Dashboard>(`/projects/${projectId}/dashboards`, { method: 'POST', body }),
+    updateDashboard: (dashId: string, body: Partial<Dashboard>) =>
+      request<Dashboard>(`/dashboards/${dashId}`, { method: 'PATCH', body }),
+    deleteDashboard: (dashId: string) =>
+      request<void>(`/dashboards/${dashId}`, { method: 'DELETE' }),
+    listInsights: (projectId: string, taskType?: TaskType) =>
+      request<{ insights: InsightDescriptor[] }>(`/projects/${projectId}/insights${taskType ? `?task=${taskType}` : ''}`)
   }
 }
 
@@ -222,6 +276,103 @@ async function mockFetch<T>(path: string, opts: { method?: string; body?: unknow
     delete s.experiments[projMatch[1]]
     persist()
     return undefined as unknown as T
+  }
+
+  // GET /projects/:projectId/dashboards
+  const dashListMatch = path.match(/^\/projects\/([^/]+)\/dashboards$/)
+  if (dashListMatch && (!opts.method || opts.method === 'GET')) {
+    return (s.dashboards[dashListMatch[1]] ?? []) as unknown as T
+  }
+
+  // POST /projects/:projectId/dashboards
+  if (dashListMatch && opts.method === 'POST') {
+    const body = opts.body as { name: string; description?: string; widgets?: DashboardWidget[] }
+    if (!body?.name) throw err('VALIDATION_ERROR', 'name is required')
+    const id = uid('dash')
+    const dash: Dashboard = {
+      id,
+      projectId: dashListMatch[1],
+      name: body.name,
+      description: body.description ?? '',
+      widgets: body.widgets ?? [],
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    }
+    s.dashboards[dashListMatch[1]] = s.dashboards[dashListMatch[1]] ?? []
+    s.dashboards[dashListMatch[1]].unshift(dash)
+    persist()
+    return dash as unknown as T
+  }
+
+  // GET /projects/:projectId/insights?task=...
+  const insightsMatch = path.match(/^\/projects\/([^/]+)\/insights(?:\?.*)?$/)
+  if (insightsMatch) {
+    const url = new URL(path, 'http://x')
+    const task = url.searchParams.get('task') as TaskType | null
+    return { insights: listInsights(insightsMatch[1], task ?? undefined) } as unknown as T
+  }
+
+  // GET /dashboards/:id (resolves widget data)
+  const dashGetMatch = path.match(/^\/dashboards\/([^/]+)$/)
+  if (dashGetMatch && (!opts.method || opts.method === 'GET')) {
+    for (const list of Object.values(s.dashboards)) {
+      const dash = list.find(d => d.id === dashGetMatch[1])
+      if (dash) {
+        // resolve every widget's data based on its insight + experimentId
+        const resolved: Dashboard = {
+          ...dash,
+          widgets: dash.widgets.map(w => {
+            if (!w.experimentId && w.insight !== 'feature_importance' && w.insight !== 'confusion_matrix'
+                && w.insight !== 'roc_curve' && w.insight !== 'residuals'
+                && w.insight !== 'metric_list' && w.insight !== 'metric_card') {
+              // dataset-level insight — use first dataset of the project
+              const ds = DATASETS.find(d => d.projectId === dash.projectId)
+              if (!ds) return w
+              const ctx = { datasetId: ds.id, taskType: 'classification' as TaskType }
+              const out = resolveInsight(w.insight, ctx)
+              return out ? { ...w, data: out.data } : w
+            }
+            // experiment-level insight
+            const exp = Object.values(s.experiments).flat().find(e => e.id === w.experimentId)
+            if (!exp) return w
+            const ds = DATASETS.find(d => d.projectId === dash.projectId)
+            if (!ds) return w
+            const ctx = { datasetId: ds.id, experimentId: w.experimentId, taskType: exp.taskType }
+            const out = resolveInsight(w.insight, ctx)
+            return out ? { ...w, data: out.data } : w
+          })
+        }
+        return resolved as unknown as T
+      }
+    }
+    throw err('NOT_FOUND', 'Dashboard not found')
+  }
+
+  // PATCH /dashboards/:id
+  if (dashGetMatch && opts.method === 'PATCH') {
+    const body = opts.body as Partial<Dashboard>
+    for (const list of Object.values(s.dashboards)) {
+      const dash = list.find(d => d.id === dashGetMatch[1])
+      if (dash) {
+        Object.assign(dash, body, { updatedAt: new Date().toISOString() })
+        persist()
+        return dash as unknown as T
+      }
+    }
+    throw err('NOT_FOUND', 'Dashboard not found')
+  }
+
+  // DELETE /dashboards/:id
+  if (dashGetMatch && opts.method === 'DELETE') {
+    for (const list of Object.values(s.dashboards)) {
+      const i = list.findIndex(d => d.id === dashGetMatch[1])
+      if (i >= 0) {
+        list.splice(i, 1)
+        persist()
+        return undefined as unknown as T
+      }
+    }
+    throw err('NOT_FOUND', 'Dashboard not found')
   }
 
   // GET /projects/:projectId/experiments

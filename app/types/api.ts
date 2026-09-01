@@ -116,6 +116,54 @@ export interface ExperimentStatusResponse {
   errorMessage?: string
 }
 
+// ── Dashboards (Sprint 5) ──────────────────────────────────────────────
+
+export type WidgetType =
+  | 'metric_card' | 'metric_list'
+  | 'bar_chart' | 'line_chart' | 'scatter_chart'
+  | 'heatmap' | 'confusion_matrix' | 'roc_curve'
+  | 'stat_table' | 'missing_values' | 'feature_importance'
+  | 'distribution'
+
+export interface WidgetPosition {
+  x: number       // 0..11, 12-col grid
+  y: number       // row
+  width: number   // 1..12
+  height: number  // row units (default 1)
+}
+
+export interface DashboardWidget {
+  id: string
+  type: WidgetType
+  title: string
+  /** Insight identifier — backend resolves this to widget data on dashboard fetch. */
+  insight: string
+  /** Source experiment (if widget references experiment results). */
+  experimentId?: string
+  position: WidgetPosition
+  /** Backend-rendered widget payload — type depends on widgetType. */
+  data?: unknown
+}
+
+export interface Dashboard {
+  id: string
+  projectId: string
+  name: string
+  description?: string
+  widgets: DashboardWidget[]
+  createdAt: string
+  updatedAt: string
+}
+
+/** Subset of insights exposed by the backend (PRD §6.1 §5 — InsightSelector). */
+export interface InsightDescriptor {
+  key: string                // e.g. 'feature_importance'
+  label: string              // e.g. 'Feature importance'
+  category: 'dataset' | 'eda' | 'ml' | 'model_metrics'
+  /** When true, this insight is compatible with the current task type. */
+  available: boolean
+}
+
 // ── Experiment results (Sprint 4) ────────────────────────────────────
 
 export type ClassificationMetrics = {
