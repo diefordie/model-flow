@@ -44,10 +44,46 @@ export const useAuth = () => {
 
   const isAuthenticated = computed(() => !!session.value)
 
-  async function signIn(email: string, password: string) {
+  async function signIn(email: string, password: string): Promise<boolean> {
     isLoading.value = true
     error.value = null
     try {
+      const config = useRuntimeConfig()
+      const isReal = config.public.apiMode === 'real'
+
+      // Real mode: prefer backend proxy at /api/v1/auth/signin. Falls back
+      // to direct Supabase if backend endpoint isn't deployed yet (404).
+      if (isReal) {
+        try {
+          const r = await fetch('/api/v1/auth/signin', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email, password })
+          })
+          if (r.ok) {
+            const body = await r.json()
+            const s: AuthSession = {
+              access_token: body.access_token,
+              refresh_token: body.refresh_token,
+              expires_at: body.expires_at ?? Math.floor(Date.now() / 1000) + body.expires_in,
+              user: { id: body.user.id, email: body.user.email }
+            }
+            session.value = s
+            persist(s)
+            return true
+          }
+          // 401/404/405 = backend doesn't have a public signin endpoint yet
+          // (e.g. endpoint exists but mounted behind auth gate). Fall through
+          // to direct Supabase rather than blocking the user.
+          if (r.status !== 404 && r.status !== 405 && r.status !== 401) {
+            const body = await r.json().catch(() => ({}))
+            error.value = body?.error?.message ?? body?.message ?? `Login failed (${r.status})`
+            return false
+          }
+        } catch { /* network to backend failed — fall through */ }
+      }
+
+      // Mock mode / direct Supabase fallback
       const r = await fetch(`${supabaseUrl}/auth/v1/token?grant_type=password`, {
         method: 'POST',
         headers: { 'apikey': supabaseKey, 'Content-Type': 'application/json' },
