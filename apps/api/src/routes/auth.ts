@@ -69,4 +69,46 @@ router.post("/signup", validateBody(signupSchema), async (c) => {
   }, 201);
 });
 
+// /api/v1/auth/signin — credentials login.
+//
+// FE used to hit Supabase directly via /auth/v1/token?grant_type=password,
+// but the FE's runtime config sometimes ships with an empty supabaseUrl
+// (env not loaded), which collapses the fetch to a relative URL and Nuxt
+// answers with a 404 page. Going through the backend keeps the supabaseUrl
+// private and gives a single canonical envelope. Reuses the same anon-key
+// REST endpoint that signup uses — service-role can't mint user tokens.
+//
+// Invalid credentials → 401 INVALID_CREDENTIALS. Anything else → 500.
+
+router.post("/signin", validateBody(signupSchema), async (c) => {
+  const { email, password } = c.get("validated" as never) as z.infer<typeof signupSchema>;
+
+  const r = await fetch(`${env.SUPABASE_URL}/auth/v1/token?grant_type=password`, {
+    method: "POST",
+    headers: { apikey: env.SUPABASE_ANON_KEY, "Content-Type": "application/json" },
+    body: JSON.stringify({ email, password }),
+  });
+  const body = (await r.json().catch(() => null)) as
+    | { access_token: string; refresh_token: string; expires_in: number; expires_at?: number; user: { id: string; email: string | null } }
+    | { msg?: string; error_description?: string; message?: string; error?: string }
+    | null;
+  if (!r.ok || !body || !("access_token" in body) || !body.access_token) {
+    if (r.status === 400 || r.status === 401) {
+      return c.json(
+        { success: false, error: { code: "INVALID_CREDENTIALS", message: "Invalid email or password" } },
+        401
+      );
+    }
+    const msg = body && "msg" in body ? body.msg : "Signin failed";
+    return errorResponse(c, "INTERNAL_ERROR", msg);
+  }
+
+  return c.json({
+    access_token: body.access_token,
+    refresh_token: body.refresh_token,
+    expires_at: body.expires_at ?? Math.floor(Date.now() / 1000) + body.expires_in,
+    user: { id: body.user.id, email: body.user.email },
+  });
+});
+
 export default router;

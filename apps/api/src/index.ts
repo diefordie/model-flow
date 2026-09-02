@@ -21,8 +21,11 @@ app.get("/health", (c) => c.json({ ok: true }));
 // the auth gate below.
 app.route("/auth", authRouter);
 
-// Auth gate below.
-app.use("*", requireAuth);
+// Auth gate below — skip the public auth endpoints (mounted above).
+app.use("*", async (c, next) => {
+  if (c.req.path.startsWith("/api/v1/auth/")) return next();
+  return requireAuth(c, next);
+});
 
 // --- Projects ---
 app.route("/projects", projectsRouter);
